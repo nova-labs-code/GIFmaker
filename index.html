@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Working GIF Maker</title>
+<style>
+body { font-family: sans-serif; text-align: center; margin-top: 20px; }
+canvas { border: 1px solid #ccc; display: none; }
+#gifPreview { margin-top: 20px; max-width: 500px; }
+select, button { margin: 10px; padding: 5px; }
+</style>
+</head>
+<body>
+
+<h1>Working GIF Maker</h1>
+
+<input type="file" id="imageUpload" multiple accept="image/*"><br>
+
+<label for="effectSelect">Effect:</label>
+<select id="effectSelect">
+  <option value="fade">Fade</option>
+  <option value="slide">Slide</option>
+  <option value="scale">Scale</option>
+  <option value="rotate">Rotate</option>
+</select>
+
+<label for="transitionSelect">Transition:</label>
+<select id="transitionSelect">
+  <option value="none">None</option>
+  <option value="crossfade">Crossfade</option>
+  <option value="zoom">Zoom</option>
+  <option value="spin">Spin</option>
+</select>
+
+<br>
+<button id="generateBtn">Generate GIF</button>
+
+<canvas id="canvas" width="500" height="500"></canvas>
+<img id="gifPreview" alt="Your GIF will appear here">
+<br>
+<a id="downloadLink" download="animation.gif">Download GIF</a>
+
+<script src="https://cdn.jsdelivr.net/npm/gif.js/dist/gif.js"></script>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const gifPreview = document.getElementById('gifPreview');
+let files = [];
+
+document.getElementById('imageUpload').addEventListener('change', e => {
+    files = Array.from(e.target.files);
+});
+
+function loadImages(files) {
+    return Promise.all(files.map(file => new Promise(resolve => {
+        const img = new Image();
+        img.src = URL.createObjectURL(file);
+        img.onload = () => resolve(img);
+    })));
+}
+
+function drawFrame(img, effect, transition, progress, prevImg=null) {
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = canvas.width;
+    offCanvas.height = canvas.height;
+    const offCtx = offCanvas.getContext('2d');
+
+    offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+
+    // Crossfade previous image
+    if (transition === 'crossfade' && prevImg) {
+        offCtx.globalAlpha = 1 - progress;
+        offCtx.drawImage(prevImg, 0, 0, offCanvas.width, offCanvas.height);
+    }
+
+    offCtx.globalAlpha = 1;
+
+    // Apply effect
+    if (effect === 'fade') {
+        offCtx.globalAlpha = progress;
+        offCtx.drawImage(img, 0, 0, offCanvas.width, offCanvas.height);
+    } else if (effect === 'slide') {
+        offCtx.drawImage(img, progress * offCanvas.width, 0, offCanvas.width, offCanvas.height);
+    } else if (effect === 'scale') {
+        const scale = 0.5 + 0.5 * progress;
+        const x = offCanvas.width/2 - (offCanvas.width*scale)/2;
+        const y = offCanvas.height/2 - (offCanvas.height*scale)/2;
+        offCtx.drawImage(img, x, y, offCanvas.width*scale, offCanvas.height*scale);
+    } else if (effect === 'rotate') {
+        offCtx.save();
+        offCtx.translate(offCanvas.width/2, offCanvas.height/2);
+        offCtx.rotate(progress * 2 * Math.PI);
+        offCtx.drawImage(img, -offCanvas.width/2, -offCanvas.height/2, offCanvas.width, offCanvas.height);
+        offCtx.restore();
+    } else {
+        offCtx.drawImage(img, 0, 0, offCanvas.width, offCanvas.height);
+    }
+
+    // Zoom or spin transition
+    if (transition === 'zoom') {
+        const scale = 0.5 + 0.5 * progress;
+        const temp = document.createElement('canvas');
+        temp.width = offCanvas.width;
+        temp.height = offCanvas.height;
+        const tempCtx = temp.getContext('2d');
+        tempCtx.drawImage(offCanvas, 0, 0);
+        offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+        offCtx.save();
+        offCtx.translate(offCanvas.width/2, offCanvas.height/2);
+        offCtx.scale(scale, scale);
+        offCtx.translate(-offCanvas.width/2, -offCanvas.height/2);
+        offCtx.drawImage(temp, 0, 0);
+        offCtx.restore();
+    } else if (transition === 'spin') {
+        const temp = document.createElement('canvas');
+        temp.width = offCanvas.width;
+        temp.height = offCanvas.height;
+        const tempCtx = temp.getContext('2d');
+        tempCtx.drawImage(offCanvas, 0, 0);
+        offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+        offCtx.save();
+        offCtx.translate(offCanvas.width/2, offCanvas.height/2);
+        offCtx.rotate(progress * 2 * Math.PI);
+        offCtx.translate(-offCanvas.width/2, -offCanvas.height/2);
+        offCtx.drawImage(temp, 0, 0);
+        offCtx.restore();
+    }
+
+    return offCanvas;
+}
+
+document.getElementById('generateBtn').addEventListener('click', async () => {
+    if (files.length === 0) return alert("Upload images first!");
+    const images = await loadImages(files);
+    const effect = document.getElementById('effectSelect').value;
+    const transition = document.getElementById('transitionSelect').value;
+    const gif = new GIF({ workers:2, quality:10, width:canvas.width, height:canvas.height });
+    const framesPerImage = 15;
+
+    for (let i=0; i<images.length; i++) {
+        const img = images[i];
+        const prevImg = i>0 ? images[i-1] : null;
+
+        for (let f=0; f<framesPerImage; f++) {
+            const progress = f/framesPerImage;
+            const frameCanvas = drawFrame(img, effect, transition, progress, prevImg);
+            gif.addFrame(frameCanvas.getContext('2d'), {copy:true, delay:100});
+        }
+    }
+
+    gif.on('finished', blob => {
+        const url = URL.createObjectURL(blob);
+        gifPreview.src = url;
+        document.getElementById('downloadLink').href = url;
+    });
+
+    gif.render();
+});
+</script>
+</body>
+</html>
