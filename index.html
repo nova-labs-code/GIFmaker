@@ -6,14 +6,14 @@
 <title>Working GIF Maker</title>
 <style>
 body { font-family: sans-serif; text-align: center; margin-top: 20px; }
-canvas { border: 1px solid #ccc; display: none; }
+canvas { display: none; }
 #gifPreview { margin-top: 20px; max-width: 500px; }
 select, button { margin: 10px; padding: 5px; }
 </style>
 </head>
 <body>
 
-<h1>Working GIF Maker</h1>
+<h1>GIF Maker with Effects + Transitions</h1>
 
 <input type="file" id="imageUpload" multiple accept="image/*"><br>
 
@@ -60,74 +60,44 @@ function loadImages(files) {
     })));
 }
 
-function drawFrame(img, effect, transition, progress, prevImg=null) {
-    const offCanvas = document.createElement('canvas');
-    offCanvas.width = canvas.width;
-    offCanvas.height = canvas.height;
-    const offCtx = offCanvas.getContext('2d');
+// Draw a single frame with effect + transition
+function drawFrame(ctx, img, effect, transition, progress, prevImg=null) {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-
-    // Crossfade previous image
+    // Crossfade previous image if needed
     if (transition === 'crossfade' && prevImg) {
-        offCtx.globalAlpha = 1 - progress;
-        offCtx.drawImage(prevImg, 0, 0, offCanvas.width, offCanvas.height);
+        ctx.globalAlpha = 1 - progress;
+        ctx.drawImage(prevImg, 0, 0, canvas.width, canvas.height);
     }
 
-    offCtx.globalAlpha = 1;
+    ctx.globalAlpha = 1;
 
-    // Apply effect
+    // Compute effect
+    let x=0, y=0, w=canvas.width, h=canvas.height;
+    let rotation=0, scale=1;
+
     if (effect === 'fade') {
-        offCtx.globalAlpha = progress;
-        offCtx.drawImage(img, 0, 0, offCanvas.width, offCanvas.height);
+        ctx.globalAlpha = progress;
     } else if (effect === 'slide') {
-        offCtx.drawImage(img, progress * offCanvas.width, 0, offCanvas.width, offCanvas.height);
+        x = progress * canvas.width;
     } else if (effect === 'scale') {
-        const scale = 0.5 + 0.5 * progress;
-        const x = offCanvas.width/2 - (offCanvas.width*scale)/2;
-        const y = offCanvas.height/2 - (offCanvas.height*scale)/2;
-        offCtx.drawImage(img, x, y, offCanvas.width*scale, offCanvas.height*scale);
+        scale = 0.5 + progress * 0.5;
+        w = canvas.width * scale;
+        h = canvas.height * scale;
+        x = canvas.width/2 - w/2;
+        y = canvas.height/2 - h/2;
     } else if (effect === 'rotate') {
-        offCtx.save();
-        offCtx.translate(offCanvas.width/2, offCanvas.height/2);
-        offCtx.rotate(progress * 2 * Math.PI);
-        offCtx.drawImage(img, -offCanvas.width/2, -offCanvas.height/2, offCanvas.width, offCanvas.height);
-        offCtx.restore();
-    } else {
-        offCtx.drawImage(img, 0, 0, offCanvas.width, offCanvas.height);
+        rotation = progress * 2 * Math.PI;
     }
 
-    // Zoom or spin transition
-    if (transition === 'zoom') {
-        const scale = 0.5 + 0.5 * progress;
-        const temp = document.createElement('canvas');
-        temp.width = offCanvas.width;
-        temp.height = offCanvas.height;
-        const tempCtx = temp.getContext('2d');
-        tempCtx.drawImage(offCanvas, 0, 0);
-        offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-        offCtx.save();
-        offCtx.translate(offCanvas.width/2, offCanvas.height/2);
-        offCtx.scale(scale, scale);
-        offCtx.translate(-offCanvas.width/2, -offCanvas.height/2);
-        offCtx.drawImage(temp, 0, 0);
-        offCtx.restore();
-    } else if (transition === 'spin') {
-        const temp = document.createElement('canvas');
-        temp.width = offCanvas.width;
-        temp.height = offCanvas.height;
-        const tempCtx = temp.getContext('2d');
-        tempCtx.drawImage(offCanvas, 0, 0);
-        offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-        offCtx.save();
-        offCtx.translate(offCanvas.width/2, offCanvas.height/2);
-        offCtx.rotate(progress * 2 * Math.PI);
-        offCtx.translate(-offCanvas.width/2, -offCanvas.height/2);
-        offCtx.drawImage(temp, 0, 0);
-        offCtx.restore();
-    }
+    ctx.save();
+    ctx.translate(canvas.width/2, canvas.height/2);
+    ctx.rotate(rotation);
+    if (transition === 'spin') ctx.rotate(progress * 2 * Math.PI);
+    if (transition === 'zoom') scale = scale * (0.5 + 0.5 * progress);
 
-    return offCanvas;
+    ctx.drawImage(img, -canvas.width/2 + x, -canvas.height/2 + y, w, h);
+    ctx.restore();
 }
 
 document.getElementById('generateBtn').addEventListener('click', async () => {
@@ -144,8 +114,8 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
 
         for (let f=0; f<framesPerImage; f++) {
             const progress = f/framesPerImage;
-            const frameCanvas = drawFrame(img, effect, transition, progress, prevImg);
-            gif.addFrame(frameCanvas.getContext('2d'), {copy:true, delay:100});
+            drawFrame(ctx, img, effect, transition, progress, prevImg);
+            gif.addFrame(ctx, {copy:true, delay:100});
         }
     }
 
